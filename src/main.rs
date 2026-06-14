@@ -1,6 +1,5 @@
 pub mod errors;
 
-use crc::crc32::{self, Hasher32};
 use docopt::Docopt;
 use error_chain::{bail, quick_main};
 use errors::Result;
@@ -14,12 +13,12 @@ use std::io::prelude::*;
 pub struct ChunkWriter<W: io::Write + io::Seek> {
     w: W,
     len: Option<usize>,
-    crc: crc32::Digest,
+    crc: crc32fast::Hasher,
     start: u64,
 }
 
 impl<W: io::Write + io::Seek> ChunkWriter<W> {
-    pub fn begin(mut w: W, typ: [u8; 4], len: Option<usize>) -> Result<Self> {
+    pub fn begin(mut w: W, typ: png::chunk::ChunkType, len: Option<usize>) -> Result<Self> {
         // Capture the current position in the file, we need this to rewrite var-length chunks.
         let start = w.seek(io::SeekFrom::Current(0))?;
 
@@ -28,9 +27,9 @@ impl<W: io::Write + io::Seek> ChunkWriter<W> {
         w.write_all(&(len.unwrap_or(0) as u32).to_be_bytes())?;
 
         // Write the chunk type, this is hashed, but does not count for the chunk length.
-        let mut crc = crc32::Digest::new(crc32::IEEE);
-        w.write_all(&typ)?;
-        crc.write(&typ);
+        let mut crc = crc32fast::Hasher::new();
+        w.write_all(&typ.0)?;
+        crc.update(&typ.0);
 
         Ok(Self { w, len, crc, start })
     }
@@ -53,7 +52,7 @@ impl<W: io::Write + io::Seek> ChunkWriter<W> {
         }
 
         // Write the CRC32, yield the writer back.
-        self.w.write_all(&self.crc.sum32().to_be_bytes())?;
+        self.w.write_all(&self.crc.finalize().to_be_bytes())?;
         Ok(self.w)
     }
 }
@@ -61,7 +60,7 @@ impl<W: io::Write + io::Seek> ChunkWriter<W> {
 impl<W: io::Write + io::Seek> Write for ChunkWriter<W> {
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         let num = self.w.write(data)?;
-        self.crc.write(data);
+        self.crc.update(data);
         Ok(num)
     }
 
@@ -70,7 +69,7 @@ impl<W: io::Write + io::Seek> Write for ChunkWriter<W> {
     }
 }
 
-pub fn write_chunk<W: io::Write + io::Seek>(w: W, typ: [u8; 4], data: &[u8]) -> Result<W> {
+pub fn write_chunk<W: io::Write + io::Seek>(w: W, typ: png::chunk::ChunkType, data: &[u8]) -> Result<W> {
     let mut cw = ChunkWriter::begin(w, typ, Some(data.len()))?;
     cw.write_all(data)?;
     cw.finish()
@@ -85,19 +84,11 @@ fn render<W: io::Write + io::Seek>(
 ) -> Result<W> {
     // Figure out how many bytes of image data to generate.
     // Calculations lifted from the png crate.
-    let info = png::Info {
-        width: width as u32,
-        height: height as u32,
-        bit_depth: bit_depth,
-        color_type: color_type,
-        interlaced: false,
-        palette: None,
-        trns: None,
-        pixel_dims: None,
-        frame_control: None,
-        animation_control: None,
-        compression: png::Compression::Best,
-        filter: png::FilterType::NoFilter,
+    let info = {
+        let mut info_init = png::Info::with_size(width as u32, height as u32);
+        info_init.bit_depth = bit_depth;
+        info_init.color_type = color_type;
+        info_init
     };
     //let in_len = info.raw_row_length() - 1;
     //let data_size = in_len * info.height as usize;
