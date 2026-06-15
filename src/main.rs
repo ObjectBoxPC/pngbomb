@@ -149,11 +149,14 @@ fn render<W: io::Write + io::Seek>(
 const USAGE: &str = "
 pngbomb - generate a very big PNG
 
-Usage: pngbomb [options] <outfile>
+Usage:
+  pngbomb [options] <outfile>
+  pngbomb -? | --help
 
 Options:
   -w PX --width=PX   Output width [default: 10000]
   -h PX --height=PX  Output height [default: 10000]
+  -? --help          Show this message
 ";
 
 #[derive(Deserialize)]
@@ -164,7 +167,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let args: Args = Docopt::new(USAGE)?.deserialize()?;
+    let args: Args = Docopt::new(USAGE)?.help(true).deserialize()?;
     render(
         &mut File::create(args.arg_outfile)?,
         args.flag_width,
