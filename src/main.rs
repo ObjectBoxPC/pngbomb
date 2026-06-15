@@ -1,8 +1,5 @@
-pub mod errors;
-
+use anyhow::{bail, Result};
 use docopt::Docopt;
-use error_chain::{bail, quick_main};
-use errors::Result;
 use flate2::{write::ZlibEncoder, Compression};
 use pbr::ProgressBar;
 use serde::Deserialize;
@@ -166,7 +163,7 @@ struct Args {
     flag_height: usize,
 }
 
-fn run() -> Result<()> {
+fn main() -> Result<()> {
     let args: Args = Docopt::new(USAGE)?.deserialize()?;
     render(
         &mut File::create(args.arg_outfile)?,
@@ -177,4 +174,3 @@ fn run() -> Result<()> {
     )?;
     Ok(())
 }
-quick_main!(run);
